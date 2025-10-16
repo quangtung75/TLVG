@@ -2,6 +2,7 @@ package com.quangtung.gantimelapse.util
 
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.net.Uri
 import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
@@ -10,6 +11,8 @@ import org.opencv.android.Utils
 import org.opencv.core.Core
 import org.opencv.core.Mat
 import org.opencv.imgproc.Imgproc
+import java.io.InputStream
+import kotlin.math.min
 
 class TimelapseGenerator(
     private val context: Context,
@@ -22,13 +25,18 @@ class TimelapseGenerator(
         val hour: Int
     )
 
+    companion object {
+        private const val TARGET_SIZE = 1080
+    }
+
     suspend fun generateTimelapseFrames(
         imageUri: Uri,
         frameCount: Int,
         startHour: Int,
         endHour: Int
     ): List<TimelapseFrame> = withContext(Dispatchers.Default) {
-        val highResGuideBitmap = MediaStore.Images.Media.getBitmap(context.contentResolver, imageUri)
+        val guideBitmap = loadSquareBitmap(context, imageUri, TARGET_SIZE)
+            ?: return@withContext emptyList()
         val frames = mutableListOf<TimelapseFrame>()
 
         val tStart = startHour / 24.0f
@@ -43,11 +51,10 @@ class TimelapseGenerator(
             val interpolatedTValue = tStart + progress * (tEnd - tStart)
             val finalModelTValue = interpolatedTValue % 1.0f
 
-            // 1. Tạo ảnh màu 128x128 từ model
-            val lowResColorBitmap = generatorRunner.generate(highResGuideBitmap, finalModelTValue)
+            val lowResColorBitmap = generatorRunner.generate(guideBitmap, finalModelTValue)
 
             if (lowResColorBitmap != null) {
-                val finalHighResBitmap = applyColorUpsampling(highResGuideBitmap, lowResColorBitmap)
+                val finalHighResBitmap = applyColorUpsampling(guideBitmap, lowResColorBitmap)
 
                 val currentHour = (interpolatedTValue * 24).toInt() % 24
                 val timeLabel = getTimeLabel(currentHour)
@@ -57,7 +64,57 @@ class TimelapseGenerator(
         frames
     }
 
+    private fun loadSquareBitmap(context: Context, imageUri: Uri, targetSize: Int): Bitmap? {
+        var inputStream: InputStream? = null
+        try {
+            inputStream = context.contentResolver.openInputStream(imageUri)
+            val options = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+            BitmapFactory.decodeStream(inputStream, null, options)
+            inputStream?.close()
 
+            options.inSampleSize = calculateInSampleSize(options, targetSize, targetSize)
+            options.inJustDecodeBounds = false
+
+            inputStream = context.contentResolver.openInputStream(imageUri)
+            val downscaledBitmap = BitmapFactory.decodeStream(inputStream, null, options) ?: return null
+
+            val smallerDim = min(downscaledBitmap.width, downscaledBitmap.height)
+            val x = (downscaledBitmap.width - smallerDim) / 2
+            val y = (downscaledBitmap.height - smallerDim) / 2
+            val croppedBitmap = Bitmap.createBitmap(downscaledBitmap, x, y, smallerDim, smallerDim)
+            if (downscaledBitmap != croppedBitmap) {
+                downscaledBitmap.recycle()
+            }
+
+            if (croppedBitmap.width == targetSize) {
+                return croppedBitmap
+            } else {
+                val finalBitmap = Bitmap.createScaledBitmap(croppedBitmap, targetSize, targetSize, true)
+                if (croppedBitmap != finalBitmap) {
+                    croppedBitmap.recycle()
+                }
+                return finalBitmap
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
+            return null
+        } finally {
+            inputStream?.close()
+        }
+    }
+
+    private fun calculateInSampleSize(options: BitmapFactory.Options, reqWidth: Int, reqHeight: Int): Int {
+        val (height: Int, width: Int) = options.outHeight to options.outWidth
+        var inSampleSize = 1
+        if (height > reqHeight || width > reqWidth) {
+            val halfHeight: Int = height / 2
+            val halfWidth: Int = width / 2
+            while (halfHeight / inSampleSize >= reqHeight && halfWidth / inSampleSize >= reqWidth) {
+                inSampleSize *= 2
+            }
+        }
+        return inSampleSize
+    }
 
     private fun applyColorUpsampling(highResGuide: Bitmap, lowResColor: Bitmap): Bitmap {
         val highResMat = Mat()
