@@ -12,6 +12,7 @@
         android:layout_height="wrap_content"
         app:cardCornerRadius="16dp"
         app:cardElevation="4dp"
+        app:cardBackgroundColor="@color/white"
         app:layout_constraintBottom_toBottomOf="parent"
         app:layout_constraintEnd_toEndOf="parent"
         app:layout_constraintStart_toStartOf="parent"
@@ -38,6 +39,7 @@
                 android:layout_height="0dp"
                 android:layout_marginTop="24dp"
                 android:background="@drawable/dotted_border_background"
+                android:backgroundTint="@color/white"
                 android:clickable="true"
                 android:focusable="true"
                 android:scaleType="centerCrop"
@@ -46,14 +48,14 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/tvTitle"
                 app:shapeAppearanceOverlay="@style/ShapeAppearance.Material3.Corner.Large"
-                app:srcCompat="@drawable/ic_upload_placeholder" />
+                app:srcCompat="@drawable/image_placeholder" />
             <com.google.android.material.button.MaterialButton
                 android:id="@+id/btnChooseImage"
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_marginTop="24dp"
                 android:text="Choose Image"
-                app:icon="@drawable/ic_add_photo"
+                app:icon="@drawable/ic_filled_add_photo"
                 app:layout_constraintEnd_toEndOf="parent"
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintTop_toBottomOf="@id/ivImagePreview" />
