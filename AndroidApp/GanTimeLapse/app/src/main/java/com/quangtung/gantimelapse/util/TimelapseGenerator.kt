@@ -1,4 +1,4 @@
-package com.quangtung.gantimelapse
+package com.quangtung.gantimelapse.util
 
 import android.content.Context
 import android.graphics.Bitmap
@@ -9,9 +9,7 @@ import kotlinx.coroutines.withContext
 import org.opencv.android.Utils
 import org.opencv.core.Core
 import org.opencv.core.Mat
-import org.opencv.core.Scalar
 import org.opencv.imgproc.Imgproc
-import kotlin.math.roundToInt
 
 class TimelapseGenerator(
     private val context: Context,

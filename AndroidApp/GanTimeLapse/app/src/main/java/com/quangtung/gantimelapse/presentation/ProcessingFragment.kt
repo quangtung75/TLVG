@@ -1,4 +1,4 @@
-package com.quangtung.gantimelapse
+package com.quangtung.gantimelapse.presentation
 
 import android.graphics.Bitmap
 import android.net.Uri
@@ -13,6 +13,11 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.ItemTouchHelper
 import androidx.recyclerview.widget.RecyclerView
+import com.quangtung.gantimelapse.util.GeneratorRunner
+import com.quangtung.gantimelapse.R
+import com.quangtung.gantimelapse.adapter.TimelapseFrameAdapter
+import com.quangtung.gantimelapse.util.TimelapseGenerator
+import com.quangtung.gantimelapse.util.VideoEncoder
 import com.quangtung.gantimelapse.databinding.FragmentProcessingBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

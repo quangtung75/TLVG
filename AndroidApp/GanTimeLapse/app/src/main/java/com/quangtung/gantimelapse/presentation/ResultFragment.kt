@@ -1,23 +1,19 @@
-package com.quangtung.gantimelapse
+package com.quangtung.gantimelapse.presentation
 
 import android.content.ContentValues
-import android.graphics.Color
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.provider.MediaStore
 import android.view.*
 import android.widget.Toast
 import androidx.core.content.FileProvider
-import androidx.core.graphics.drawable.DrawableCompat
-import androidx.core.view.MenuProvider
 import androidx.fragment.app.Fragment
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.lifecycleScope
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.navigation.fragment.findNavController
+import com.quangtung.gantimelapse.R
 import com.quangtung.gantimelapse.databinding.FragmentResultBinding
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch

@@ -1,4 +1,4 @@
-package com.quangtung.gantimelapse
+package com.quangtung.gantimelapse.util
 
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -6,8 +6,6 @@ import org.pytorch.IValue
 import org.pytorch.Module
 import org.pytorch.Tensor
 import org.pytorch.torchvision.TensorImageUtils
-import java.io.File
-import java.io.FileOutputStream
 import java.util.Random
 
 class GeneratorRunner(private val modelPath: String) {

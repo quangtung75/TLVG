@@ -1,4 +1,4 @@
-package com.quangtung.gantimelapse
+package com.quangtung.gantimelapse.util
 
 import android.graphics.Bitmap
 import android.media.MediaCodec
