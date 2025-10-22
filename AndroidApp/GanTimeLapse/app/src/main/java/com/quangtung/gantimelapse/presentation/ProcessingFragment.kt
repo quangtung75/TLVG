@@ -46,7 +46,7 @@ class ProcessingFragment : Fragment() {
             startHour = it.getInt("start_hour", 6)
             endHour = it.getInt("end_hour", 18)
         }
-        val modelPath = assetFilePath("model_mobile.ptl")
+        val modelPath = assetFilePath("model_scripted_only.ptl")
         runner = GeneratorRunner(modelPath)
         generator = TimelapseGenerator(requireContext(), runner)
     }

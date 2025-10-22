@@ -2,6 +2,7 @@ package com.quangtung.gantimelapse.util
 
 import android.graphics.Bitmap
 import android.graphics.Color
+import android.util.Log
 import org.pytorch.IValue
 import org.pytorch.Module
 import org.pytorch.Tensor
@@ -16,10 +17,10 @@ class GeneratorRunner(private val modelPath: String) {
 
     companion object {
         const val IMG_SIZE = 128
-        const val Z_DIM = 128
+        const val Z_DIM = 8
     }
 
-    fun generate(inputBitmap: Bitmap, tValue: Float): Bitmap? {
+    fun generate(inputBitmap: Bitmap, tValue: Int): Bitmap? {
         // --- BƯỚC 1: CHUẨN BỊ CÁC INPUT TENSOR ---
 
         // 1.1. Chuẩn bị Tensor 'x' (ảnh đầu vào)
@@ -39,8 +40,8 @@ class GeneratorRunner(private val modelPath: String) {
         val zData = FloatArray(Z_DIM) { (random.nextGaussian()).toFloat() } // Tạo nhiễu từ phân phối chuẩn
         val zTensor = Tensor.fromBlob(zData, longArrayOf(1, Z_DIM.toLong()))
 
-        // 1.3. Chuẩn bị Tensor 't' (giá trị điều kiện)
-        val tTensor = Tensor.fromBlob(floatArrayOf(tValue), longArrayOf(1, 1))
+        val tData = longArrayOf(tValue.toLong())
+        val tTensor = Tensor.fromBlob(tData, longArrayOf(1, 1))
 
         // --- BƯỚC 2: GỌI MODEL VÀ CHẠY SUY LUẬN ---
 
@@ -63,6 +64,8 @@ class GeneratorRunner(private val modelPath: String) {
     private fun tensorToBitmap(tensor: Tensor): Bitmap? {
         val floatData = tensor.dataAsFloatArray
         val shape = tensor.shape() // Shape should be [1, 3, 128, 128]
+
+        Log.d("GeneratorRunner", "Tensor Min: ${floatData.minOrNull()}, Max: ${floatData.maxOrNull()}, First 5: ${floatData.take(5).joinToString()}")
 
         val height = shape[2].toInt()
         val width = shape[3].toInt()

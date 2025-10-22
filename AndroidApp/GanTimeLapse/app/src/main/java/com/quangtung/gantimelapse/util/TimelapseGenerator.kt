@@ -9,10 +9,14 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.opencv.android.Utils
 import org.opencv.core.Core
+import org.opencv.core.CvType
 import org.opencv.core.Mat
+import org.opencv.core.MatOfDouble
+import org.opencv.core.Scalar
 import org.opencv.imgproc.Imgproc
 import java.io.InputStream
 import kotlin.math.min
+import kotlin.math.roundToInt
 
 class TimelapseGenerator(
     private val context: Context,
@@ -26,7 +30,7 @@ class TimelapseGenerator(
     )
 
     companion object {
-        private const val TARGET_SIZE = 1080
+        private const val TARGET_SIZE = 512
     }
 
     suspend fun generateTimelapseFrames(
@@ -39,28 +43,37 @@ class TimelapseGenerator(
             ?: return@withContext emptyList()
         val frames = mutableListOf<TimelapseFrame>()
 
-        val tStart = startHour / 24.0f
-        var tEnd = endHour / 24.0f
+        // --- BẮT ĐẦU THAY ĐỔI LOGIC ---
 
-        if (tEnd <= tStart) {
-            tEnd += 1.0f
+        // Mô hình có 48 bước (0-47), tương ứng 2 bước mỗi giờ
+        val tStartIndex = startHour * 2
+        var tEndIndex = endHour * 2
+
+        // Xử lý trường hợp vòng qua đêm (ví dụ: 22:00 -> 06:00)
+        // Bằng cách cộng thêm 48 bước (1 ngày) vào chỉ số kết thúc
+        if (tEndIndex <= tStartIndex) {
+            tEndIndex += 48
         }
 
         for (i in 0 until frameCount) {
-            val progress = i.toFloat() / (frameCount - 1)
-            val interpolatedTValue = tStart + progress * (tEnd - tStart)
-            val finalModelTValue = interpolatedTValue % 1.0f
+
+            val progress = if (frameCount > 1) i.toFloat() / (frameCount - 1) else 0.0f
+
+            val interpolatedIndex = tStartIndex + progress * (tEndIndex - tStartIndex)
+
+            val finalModelTValue = interpolatedIndex.roundToInt() % 48
 
             val lowResColorBitmap = generatorRunner.generate(guideBitmap, finalModelTValue)
 
             if (lowResColorBitmap != null) {
-                val finalHighResBitmap = applyColorUpsampling(guideBitmap, lowResColorBitmap)
+                val finalHighResBitmap = applyColorTransferLab(guideBitmap, lowResColorBitmap)
 
-                val currentHour = (interpolatedTValue * 24).toInt() % 24
+                val currentHour = finalModelTValue / 2
                 val timeLabel = getTimeLabel(currentHour)
                 frames.add(TimelapseFrame(finalHighResBitmap, timeLabel, currentHour))
             }
         }
+
         frames
     }
 
@@ -116,7 +129,7 @@ class TimelapseGenerator(
         return inSampleSize
     }
 
-    private fun applyColorUpsampling(highResGuide: Bitmap, lowResColor: Bitmap): Bitmap {
+    private fun applyColorTransferLab(highResGuide: Bitmap, lowResColor: Bitmap): Bitmap {
         val highResMat = Mat()
         Utils.bitmapToMat(highResGuide, highResMat)
         val lowResMat = Mat()
@@ -136,10 +149,11 @@ class TimelapseGenerator(
         val lowResChannels = ArrayList<Mat>()
         Core.split(upscaledLowResMat, lowResChannels)
 
-        val alpha = 0.5
-        val blendedL = Mat()
-        Core.addWeighted(highResChannels[0], alpha, lowResChannels[0], 1 - alpha, 0.0, blendedL)
-        val finalChannels = listOf(blendedL, lowResChannels[1], lowResChannels[2])
+        val finalChannels = listOf(
+            highResChannels[0], // Kênh L từ ảnh gốc (chi tiết)
+            lowResChannels[1],  // Kênh a* từ ảnh GAN (màu)
+            lowResChannels[2]   // Kênh b* từ ảnh GAN (màu)
+        )
 
         val finalLabMat = Mat()
         Core.merge(finalChannels, finalLabMat)
@@ -150,7 +164,6 @@ class TimelapseGenerator(
         val finalBitmap = Bitmap.createBitmap(highResGuide.width, highResGuide.height, Bitmap.Config.ARGB_8888)
         Utils.matToBitmap(finalRgbMat, finalBitmap)
 
-        // Giải phóng bộ nhớ cho các đối tượng Mat
         highResMat.release()
         lowResMat.release()
         upscaledLowResMat.release()
