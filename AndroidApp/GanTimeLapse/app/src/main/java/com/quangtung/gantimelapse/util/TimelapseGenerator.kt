@@ -66,7 +66,7 @@ class TimelapseGenerator(
             val lowResColorBitmap = generatorRunner.generate(guideBitmap, finalModelTValue)
 
             if (lowResColorBitmap != null) {
-                val finalHighResBitmap = applyColorTransferLab(guideBitmap, lowResColorBitmap)
+                val finalHighResBitmap = applyColorUpsampling(guideBitmap, lowResColorBitmap)
 
                 val currentHour = finalModelTValue / 2
                 val timeLabel = getTimeLabel(currentHour)
@@ -127,6 +127,52 @@ class TimelapseGenerator(
             }
         }
         return inSampleSize
+    }
+
+    private fun applyColorUpsampling(highResGuide: Bitmap, lowResColor: Bitmap): Bitmap {
+        val highResMat = Mat()
+        Utils.bitmapToMat(highResGuide, highResMat)
+        val lowResMat = Mat()
+        Utils.bitmapToMat(lowResColor, lowResMat)
+
+        Imgproc.cvtColor(highResMat, highResMat, Imgproc.COLOR_RGBA2RGB)
+        Imgproc.cvtColor(lowResMat, lowResMat, Imgproc.COLOR_RGBA2RGB)
+
+        val upscaledLowResMat = Mat()
+        Imgproc.resize(lowResMat, upscaledLowResMat, highResMat.size(), 0.0, 0.0, Imgproc.INTER_CUBIC)
+
+        Imgproc.cvtColor(highResMat, highResMat, Imgproc.COLOR_RGB2Lab)
+        Imgproc.cvtColor(upscaledLowResMat, upscaledLowResMat, Imgproc.COLOR_RGB2Lab)
+
+        val highResChannels = ArrayList<Mat>()
+        Core.split(highResMat, highResChannels)
+        val lowResChannels = ArrayList<Mat>()
+        Core.split(upscaledLowResMat, lowResChannels)
+
+        val alpha = 0.5
+        val blendedL = Mat()
+        Core.addWeighted(highResChannels[0], alpha, lowResChannels[0], 1 - alpha, 0.0, blendedL)
+        val finalChannels = listOf(blendedL, lowResChannels[1], lowResChannels[2])
+
+        val finalLabMat = Mat()
+        Core.merge(finalChannels, finalLabMat)
+
+        val finalRgbMat = Mat()
+        Imgproc.cvtColor(finalLabMat, finalRgbMat, Imgproc.COLOR_Lab2RGB)
+
+        val finalBitmap = Bitmap.createBitmap(highResGuide.width, highResGuide.height, Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(finalRgbMat, finalBitmap)
+
+        // Giải phóng bộ nhớ cho các đối tượng Mat
+        highResMat.release()
+        lowResMat.release()
+        upscaledLowResMat.release()
+        highResChannels.forEach { it.release() }
+        lowResChannels.forEach { it.release() }
+        finalLabMat.release()
+        finalRgbMat.release()
+
+        return finalBitmap
     }
 
     private fun applyColorTransferLab(highResGuide: Bitmap, lowResColor: Bitmap): Bitmap {
