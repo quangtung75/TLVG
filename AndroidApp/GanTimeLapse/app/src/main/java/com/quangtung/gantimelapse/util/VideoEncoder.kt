@@ -18,7 +18,7 @@ class VideoEncoder {
 
     companion object {
         private const val MIME_TYPE = "video/avc"
-        private const val FRAME_RATE = 8
+        private const val FRAME_RATE = 4
         private const val I_FRAME_INTERVAL = 1
         private const val TIMEOUT_USEC = 10000L
         private const val BIT_RATE = 2_000_000
