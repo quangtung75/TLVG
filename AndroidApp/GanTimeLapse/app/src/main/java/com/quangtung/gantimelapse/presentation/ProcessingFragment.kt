@@ -40,12 +40,16 @@ class ProcessingFragment : Fragment() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+
+        // Chỉ lấy imageUri từ arguments
         arguments?.let {
             imageUri = it.getString(ARG_IMAGE_URI)?.let { uriString -> Uri.parse(uriString) }
-            frameCount = it.getInt("frame_count", 48)
-            startHour = it.getInt("start_hour", 6)
-            endHour = it.getInt("end_hour", 18)
         }
+
+        frameCount = 12
+        startHour = 6
+        endHour = 23
+
         val modelPath = assetFilePath("model_mobile.ptl")
         runner = GeneratorRunner(modelPath)
         generator = TimelapseGenerator(requireContext(), runner)
@@ -78,24 +82,33 @@ class ProcessingFragment : Fragment() {
         imageUri?.let { uri ->
             viewLifecycleOwner.lifecycleScope.launch(Dispatchers.Main) {
                 try {
-                    binding.tvStatus.text = "Generating frames..."
+                    binding.tvStatus.text = "Generating 12 original frames..."
                     binding.progressIndicator.progress = 0
 
                     val frames = withContext(Dispatchers.Default) {
                         generator.generateTimelapseFrames(uri, frameCount, startHour, endHour)
                     }
 
-                    binding.tvStatus.text = "Generated ${frames.size} frames"
+                    binding.tvStatus.text = "Generated 12 frames. Interpolating..."
+
+                    val originalBitmaps = frames.map { it.bitmap }
+                    val smoothedBitmaps = withContext(Dispatchers.Default) {
+                        applyFakeInterpolation(originalBitmaps, 7)
+                    }
+
+
+                    binding.tvStatus.text = "Generated ${smoothedBitmaps.size} total frames"
                     binding.progressIndicator.progress = 100
 
-                    val bitmaps = frames.map { it.bitmap }.toMutableList()
-                    adapter = TimelapseFrameAdapter(bitmaps)
+                    val mutableSmoothedBitmaps = smoothedBitmaps.toMutableList()
+
+                    adapter = TimelapseFrameAdapter(mutableSmoothedBitmaps)
                     binding.recyclerFrames.adapter = adapter
                     enableDragAndDrop()
 
                     binding.btnCreateVideo.isEnabled = true
                     binding.btnCreateVideo.setOnClickListener {
-                        createVideoFromFrames(bitmaps)
+                        createVideoFromFrames(mutableSmoothedBitmaps)
                     }
 
                 } catch (e: Exception) {
@@ -103,6 +116,46 @@ class ProcessingFragment : Fragment() {
                 }
             }
         }
+    }
+
+    private fun applyFakeInterpolation(
+        originalFrames: List<Bitmap>,
+        framesToInsert: Int
+    ): List<Bitmap> {
+
+        val smoothedFrames = mutableListOf<Bitmap>()
+
+        for (i in 0 until originalFrames.size - 1) {
+            val frameA = originalFrames[i]
+            val frameB = originalFrames[i + 1]
+
+            smoothedFrames.add(frameA)
+
+            for (j in 1..framesToInsert) {
+                val ratio = j.toFloat() / (framesToInsert + 1)
+
+                val intermediateFrame = alphaBlendBitmaps(frameA, frameB, ratio)
+                smoothedFrames.add(intermediateFrame)
+            }
+        }
+
+        smoothedFrames.add(originalFrames.last())
+
+        return smoothedFrames
+    }
+
+    private fun alphaBlendBitmaps(frameA: Bitmap, frameB: Bitmap, ratio: Float): Bitmap {
+        val resultBitmap = Bitmap.createBitmap(frameA.width, frameA.height, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(resultBitmap)
+        val paint = android.graphics.Paint()
+
+        paint.alpha = ((1.0f - ratio) * 255).toInt()
+        canvas.drawBitmap(frameA, 0f, 0f, paint)
+
+        paint.alpha = (ratio * 255).toInt()
+        canvas.drawBitmap(frameB, 0f, 0f, paint)
+
+        return resultBitmap
     }
 
     private fun enableDragAndDrop() {
