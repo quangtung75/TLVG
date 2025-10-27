@@ -7,6 +7,7 @@ import android.net.Uri
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.InputStream
+import java.util.Random
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -45,15 +46,16 @@ class TimelapseGenerator(
             tEndIndex += 48
         }
 
+        val zConstant = createRandomZ()
+
         for (i in 0 until frameCount) {
             val progress = if (frameCount > 1) i.toFloat() / (frameCount - 1) else 0.0f
             val interpolatedIndex = tStartIndex + progress * (tEndIndex - tStartIndex)
             val finalModelTValue = interpolatedIndex.roundToInt() % 48
 
-            val lowResColorBitmap = generatorRunner.generate(guideBitmap, finalModelTValue)
+            val lowResColorBitmap = generatorRunner.generate(guideBitmap, finalModelTValue, zConstant)
 
             if (lowResColorBitmap != null) {
-                // THAY ĐỔI: Sử dụng Guided Upsampling thay vì LAB color transfer
                 val finalHighResBitmap = applyGuidedUpsampling(
                     guideBitmap,
                     lowResColorBitmap
@@ -78,6 +80,11 @@ class TimelapseGenerator(
             radius = 8,
             epsilon = 0.1f
         )
+    }
+
+    private fun createRandomZ(): FloatArray {
+        val random = Random()
+        return FloatArray(GeneratorRunner.Z_DIM) { (random.nextGaussian()).toFloat() }
     }
 
     private fun loadSquareBitmap(context: Context, imageUri: Uri, targetSize: Int): Bitmap? {
