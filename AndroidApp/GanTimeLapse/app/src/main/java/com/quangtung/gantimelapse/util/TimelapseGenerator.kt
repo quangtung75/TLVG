@@ -1,3 +1,4 @@
+// Trong file: TimelapseGenerator.kt
 package com.quangtung.gantimelapse.util
 
 import android.content.Context
@@ -26,26 +27,35 @@ class TimelapseGenerator(
         private const val TARGET_SIZE = 512
     }
 
-    // Khởi tạo GuidedUpsampler
     private val guidedUpsampler = GuidedUpsampler(context)
+    private var guideBitmap: Bitmap? = null // Giữ ảnh gốc để tái sử dụng
 
-    suspend fun generateTimelapseFrames(
-        imageUri: Uri,
+    /**
+     * Tải ảnh gốc (guide) MỘT LẦN
+     */
+    suspend fun loadGuideBitmap(imageUri: Uri): Bitmap? = withContext(Dispatchers.Default) {
+        guideBitmap = loadSquareBitmap(context, imageUri, TARGET_SIZE)
+        guideBitmap
+    }
+
+    /**
+     * HÀM MỚI 1: Chỉ sinh ra các frame Low-Res (128x128)
+     */
+    suspend fun generateLowResFrames(
         frameCount: Int,
         startHour: Int,
         endHour: Int
-    ): List<TimelapseFrame> = withContext(Dispatchers.Default) {
-        val guideBitmap = loadSquareBitmap(context, imageUri, TARGET_SIZE)
-            ?: return@withContext emptyList()
-        val frames = mutableListOf<TimelapseFrame>()
+    ): List<Bitmap> = withContext(Dispatchers.Default) {
+        val localGuideBitmap = guideBitmap ?: return@withContext emptyList()
+        val frames = mutableListOf<Bitmap>()
 
         val tStartIndex = startHour * 2
         var tEndIndex = endHour * 2
-
         if (tEndIndex <= tStartIndex) {
             tEndIndex += 48
         }
 
+        // Dùng Z cố định (theo yêu cầu của bạn)
         val zConstant = createRandomZ()
 
         for (i in 0 until frameCount) {
@@ -53,34 +63,36 @@ class TimelapseGenerator(
             val interpolatedIndex = tStartIndex + progress * (tEndIndex - tStartIndex)
             val finalModelTValue = interpolatedIndex.roundToInt() % 48
 
-            val lowResColorBitmap = generatorRunner.generate(guideBitmap, finalModelTValue, zConstant)
+            val lowResColorBitmap = generatorRunner.generate(
+                localGuideBitmap,
+                finalModelTValue,
+                zConstant // Dùng Z cố định
+            )
 
             if (lowResColorBitmap != null) {
-                val finalHighResBitmap = applyGuidedUpsampling(
-                    guideBitmap,
-                    lowResColorBitmap
-                )
-//
-                val currentHour = finalModelTValue / 2
-                val timeLabel = getTimeLabel(currentHour)
-                frames.add(TimelapseFrame(finalHighResBitmap, timeLabel, currentHour))
+                frames.add(lowResColorBitmap)
             }
         }
-
         frames
     }
 
-    private fun applyGuidedUpsampling(
-        highResGuide: Bitmap,
-        lowResColor: Bitmap
-    ): Bitmap {
-        return guidedUpsampler.upsample(
+    /**
+     * HÀM MỚI 2: Upsample MỘT frame low-res
+     */
+    suspend fun upsampleSingleFrame(lowResColor: Bitmap): TimelapseFrame = withContext(Dispatchers.Default) {
+        val localGuideBitmap = guideBitmap ?: throw IllegalStateException("Guide bitmap is not loaded")
+
+        val finalHighResBitmap = guidedUpsampler.upsample(
             lowResOutput = lowResColor,
-            originalInput = highResGuide,
+            originalInput = localGuideBitmap,
             radius = 8,
             epsilon = 0.1f
         )
+
+        return@withContext TimelapseFrame(finalHighResBitmap, "", 0)
     }
+
+    // --- CÁC HÀM TIỆN ÍCH GIỮ NGUYÊN ---
 
     private fun createRandomZ(): FloatArray {
         val random = Random()
@@ -141,6 +153,8 @@ class TimelapseGenerator(
 
     fun destroy() {
         generatorRunner.destroy()
+        guideBitmap?.recycle()
+        guideBitmap = null
     }
 
     private fun getTimeLabel(hour: Int): String = when {

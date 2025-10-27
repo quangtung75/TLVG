@@ -1,3 +1,4 @@
+// Trong file: ProcessingFragment.kt
 package com.quangtung.gantimelapse.presentation
 
 import android.graphics.Bitmap
@@ -34,21 +35,16 @@ class ProcessingFragment : Fragment() {
     private lateinit var generator: TimelapseGenerator
     private lateinit var runner: GeneratorRunner
     private var imageUri: Uri? = null
-    private var frameCount: Int = 48
+    private var frameCount: Int = 24 // Bắt đầu với 24 frame GỐC
     private var startHour: Int = 6
-    private var endHour: Int = 18
+    private var endHour: Int = 23
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // Chỉ lấy imageUri từ arguments
         arguments?.let {
             imageUri = it.getString(ARG_IMAGE_URI)?.let { uriString -> Uri.parse(uriString) }
         }
-
-        frameCount = 12
-        startHour = 6
-        endHour = 23
+        // frameCount, startHour, endHour sẽ được hardcode trong startProcessing
 
         val modelPath = assetFilePath("model_mobile.ptl")
         runner = GeneratorRunner(modelPath)
@@ -78,37 +74,66 @@ class ProcessingFragment : Fragment() {
         }
     }
 
+    // *** HÀM MỚI HOÀN TOÀN ***
     private fun startProcessing() {
         imageUri?.let { uri ->
             viewLifecycleOwner.lifecycleScope.launch(Dispatchers.Main) {
                 try {
-                    binding.tvStatus.text = "Generating 12 original frames..."
+                    // Cài đặt số lượng
+                    val originalFrameCount = 24 // Số frame GỐC (128x128)
+                    val framesToInsert = 3 // Số frame "fake" (128x128)
+                    frameCount = originalFrameCount // Cập nhật biến class
+                    val totalFrames = originalFrameCount + (originalFrameCount - 1) * framesToInsert
+
+                    // --- BƯỚC 1: Tải ảnh gốc 1 lần ---
+                    binding.tvStatus.text = "Loading guide image..."
                     binding.progressIndicator.progress = 0
+                    val guideLoaded = withContext(Dispatchers.Default) {
+                        generator.loadGuideBitmap(uri)
+                    }
+                    if (guideLoaded == null) throw Exception("Failed to load guide image")
 
-                    val frames = withContext(Dispatchers.Default) {
-                        generator.generateTimelapseFrames(uri, frameCount, startHour, endHour)
+                    // --- BƯỚC 2: Sinh 24 frame 128x128 ---
+                    binding.tvStatus.text = "Generating $originalFrameCount low-res frames..."
+                    val lowResFrames = withContext(Dispatchers.Default) {
+                        generator.generateLowResFrames(originalFrameCount, startHour, endHour)
                     }
 
-                    binding.tvStatus.text = "Generated 12 frames. Interpolating..."
-
-                    val originalBitmaps = frames.map { it.bitmap }
-                    val smoothedBitmaps = withContext(Dispatchers.Default) {
-                        applyFakeInterpolation(originalBitmaps, 7)
+                    // --- BƯỚC 3: "Fake" 24 frame -> 47 frame 128x128 ---
+                    binding.tvStatus.text = "Interpolating low-res frames..."
+                    val interpolatedLowRes = withContext(Dispatchers.Default) {
+                        applyFakeInterpolation(lowResFrames, framesToInsert)
                     }
+                    // Dọn dẹp frame low-res gốc
+                    //lowResFrames.forEach { if (!it.isRecycled) it.recycle() }
 
+                    // --- BƯỚC 4: Upsample 47 frame 128x128 -> 47 frame 512x512 ---
+                    binding.tvStatus.text = "Upsampling $totalFrames final frames..."
+                    val finalHighResFrames = mutableListOf<Bitmap>()
 
-                    binding.tvStatus.text = "Generated ${smoothedBitmaps.size} total frames"
+                    interpolatedLowRes.forEachIndexed { index, lowResBmp ->
+                        val highResFrame = withContext(Dispatchers.Default) {
+                            generator.upsampleSingleFrame(lowResBmp)
+                        }
+                        finalHighResFrames.add(highResFrame.bitmap)
+
+                        // Cập nhật UI
+                        binding.progressIndicator.progress = ((index + 1) * 100 / totalFrames)
+                    }
+                    // Dọn dẹp frame low-res đã "fake"
+                    interpolatedLowRes.forEach { if (!it.isRecycled) it.recycle() }
+
+                    // --- BƯỚC 5: Hiển thị và cho phép tạo video ---
+                    binding.tvStatus.text = "Generated $totalFrames total frames"
                     binding.progressIndicator.progress = 100
 
-                    val mutableSmoothedBitmaps = smoothedBitmaps.toMutableList()
-
-                    adapter = TimelapseFrameAdapter(mutableSmoothedBitmaps)
+                    adapter = TimelapseFrameAdapter(finalHighResFrames)
                     binding.recyclerFrames.adapter = adapter
                     enableDragAndDrop()
 
                     binding.btnCreateVideo.isEnabled = true
                     binding.btnCreateVideo.setOnClickListener {
-                        createVideoFromFrames(mutableSmoothedBitmaps)
+                        createVideoFromFrames(finalHighResFrames)
                     }
 
                 } catch (e: Exception) {
@@ -118,45 +143,44 @@ class ProcessingFragment : Fragment() {
         }
     }
 
+    // *** GIỮ NGUYÊN 2 HÀM "FAKE" NÀY ***
     private fun applyFakeInterpolation(
         originalFrames: List<Bitmap>,
         framesToInsert: Int
     ): List<Bitmap> {
-
         val smoothedFrames = mutableListOf<Bitmap>()
-
         for (i in 0 until originalFrames.size - 1) {
             val frameA = originalFrames[i]
             val frameB = originalFrames[i + 1]
-
             smoothedFrames.add(frameA)
-
             for (j in 1..framesToInsert) {
                 val ratio = j.toFloat() / (framesToInsert + 1)
-
                 val intermediateFrame = alphaBlendBitmaps(frameA, frameB, ratio)
                 smoothedFrames.add(intermediateFrame)
             }
         }
-
         smoothedFrames.add(originalFrames.last())
-
         return smoothedFrames
     }
 
     private fun alphaBlendBitmaps(frameA: Bitmap, frameB: Bitmap, ratio: Float): Bitmap {
-        val resultBitmap = Bitmap.createBitmap(frameA.width, frameA.height, Bitmap.Config.ARGB_8888)
+        // Đảm bảo bitmap có thể sửa đổi
+        val resultBitmap = frameA.copy(Bitmap.Config.ARGB_8888, true)
         val canvas = android.graphics.Canvas(resultBitmap)
         val paint = android.graphics.Paint()
 
+        // Vẽ frameA (75%, 50%, 25%)
         paint.alpha = ((1.0f - ratio) * 255).toInt()
         canvas.drawBitmap(frameA, 0f, 0f, paint)
 
+        // Vẽ frameB (25%, 50%, 75%)
         paint.alpha = (ratio * 255).toInt()
         canvas.drawBitmap(frameB, 0f, 0f, paint)
 
         return resultBitmap
     }
+
+    // *** CÁC HÀM CÒN LẠI GIỮ NGUYÊN ***
 
     private fun enableDragAndDrop() {
         val callback = object : ItemTouchHelper.SimpleCallback(
@@ -171,7 +195,6 @@ class ProcessingFragment : Fragment() {
                 adapter.moveItem(viewHolder.adapterPosition, target.adapterPosition)
                 return true
             }
-
             override fun onSwiped(viewHolder: RecyclerView.ViewHolder, direction: Int) {}
         }
         ItemTouchHelper(callback).attachToRecyclerView(binding.recyclerFrames)
@@ -212,6 +235,8 @@ class ProcessingFragment : Fragment() {
     private fun makeEven(bitmap: Bitmap): Bitmap {
         val width = if (bitmap.width % 2 == 0) bitmap.width else bitmap.width - 1
         val height = if (bitmap.height % 2 == 0) bitmap.height else bitmap.height - 1
+        // Kiểm tra xem bitmap đã bị recycle chưa
+        if (bitmap.isRecycled) return bitmap
         return Bitmap.createScaledBitmap(bitmap, width, height, true)
     }
 
@@ -247,6 +272,4 @@ class ProcessingFragment : Fragment() {
             }
         }
     }
-
-
 }
