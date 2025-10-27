@@ -21,4 +21,3 @@ dependencyResolutionManagement {
 
 rootProject.name = "GanTimeLapse"
 include(":app")
-include(":opencv")

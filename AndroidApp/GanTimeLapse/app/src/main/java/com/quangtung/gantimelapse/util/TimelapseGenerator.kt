@@ -1,20 +1,14 @@
+// Trong file: TimelapseGenerator.kt
 package com.quangtung.gantimelapse.util
 
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.net.Uri
-import android.provider.MediaStore
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import org.opencv.android.Utils
-import org.opencv.core.Core
-import org.opencv.core.CvType
-import org.opencv.core.Mat
-import org.opencv.core.MatOfDouble
-import org.opencv.core.Scalar
-import org.opencv.imgproc.Imgproc
 import java.io.InputStream
+import java.util.Random
 import kotlin.math.min
 import kotlin.math.roundToInt
 
@@ -33,48 +27,76 @@ class TimelapseGenerator(
         private const val TARGET_SIZE = 512
     }
 
-    suspend fun generateTimelapseFrames(
-        imageUri: Uri,
+    private val guidedUpsampler = GuidedUpsampler(context)
+    private var guideBitmap: Bitmap? = null // Giữ ảnh gốc để tái sử dụng
+
+    /**
+     * Tải ảnh gốc (guide) MỘT LẦN
+     */
+    suspend fun loadGuideBitmap(imageUri: Uri): Bitmap? = withContext(Dispatchers.Default) {
+        guideBitmap = loadSquareBitmap(context, imageUri, TARGET_SIZE)
+        guideBitmap
+    }
+
+    /**
+     * HÀM MỚI 1: Chỉ sinh ra các frame Low-Res (128x128)
+     */
+    suspend fun generateLowResFrames(
         frameCount: Int,
         startHour: Int,
         endHour: Int
-    ): List<TimelapseFrame> = withContext(Dispatchers.Default) {
-        val guideBitmap = loadSquareBitmap(context, imageUri, TARGET_SIZE)
-            ?: return@withContext emptyList()
-        val frames = mutableListOf<TimelapseFrame>()
+    ): List<Bitmap> = withContext(Dispatchers.Default) {
+        val localGuideBitmap = guideBitmap ?: return@withContext emptyList()
+        val frames = mutableListOf<Bitmap>()
 
-        // --- BẮT ĐẦU THAY ĐỔI LOGIC ---
-
-        // Mô hình có 48 bước (0-47), tương ứng 2 bước mỗi giờ
         val tStartIndex = startHour * 2
         var tEndIndex = endHour * 2
-
-        // Xử lý trường hợp vòng qua đêm (ví dụ: 22:00 -> 06:00)
-        // Bằng cách cộng thêm 48 bước (1 ngày) vào chỉ số kết thúc
         if (tEndIndex <= tStartIndex) {
             tEndIndex += 48
         }
 
+        // Dùng Z cố định (theo yêu cầu của bạn)
+        val zConstant = createRandomZ()
+
         for (i in 0 until frameCount) {
-
             val progress = if (frameCount > 1) i.toFloat() / (frameCount - 1) else 0.0f
-
             val interpolatedIndex = tStartIndex + progress * (tEndIndex - tStartIndex)
-
             val finalModelTValue = interpolatedIndex.roundToInt() % 48
 
-            val lowResColorBitmap = generatorRunner.generate(guideBitmap, finalModelTValue)
+            val lowResColorBitmap = generatorRunner.generate(
+                localGuideBitmap,
+                finalModelTValue,
+                zConstant // Dùng Z cố định
+            )
 
             if (lowResColorBitmap != null) {
-                val finalHighResBitmap = applyColorUpsampling(guideBitmap, lowResColorBitmap)
-
-                val currentHour = finalModelTValue / 2
-                val timeLabel = getTimeLabel(currentHour)
-                frames.add(TimelapseFrame(finalHighResBitmap, timeLabel, currentHour))
+                frames.add(lowResColorBitmap)
             }
         }
-
         frames
+    }
+
+    /**
+     * HÀM MỚI 2: Upsample MỘT frame low-res
+     */
+    suspend fun upsampleSingleFrame(lowResColor: Bitmap): TimelapseFrame = withContext(Dispatchers.Default) {
+        val localGuideBitmap = guideBitmap ?: throw IllegalStateException("Guide bitmap is not loaded")
+
+        val finalHighResBitmap = guidedUpsampler.upsample(
+            lowResOutput = lowResColor,
+            originalInput = localGuideBitmap,
+            radius = 8,
+            epsilon = 0.1f
+        )
+
+        return@withContext TimelapseFrame(finalHighResBitmap, "", 0)
+    }
+
+    // --- CÁC HÀM TIỆN ÍCH GIỮ NGUYÊN ---
+
+    private fun createRandomZ(): FloatArray {
+        val random = Random()
+        return FloatArray(GeneratorRunner.Z_DIM) { (random.nextGaussian()).toFloat() }
     }
 
     private fun loadSquareBitmap(context: Context, imageUri: Uri, targetSize: Int): Bitmap? {
@@ -129,100 +151,10 @@ class TimelapseGenerator(
         return inSampleSize
     }
 
-    private fun applyColorUpsampling(highResGuide: Bitmap, lowResColor: Bitmap): Bitmap {
-        val highResMat = Mat()
-        Utils.bitmapToMat(highResGuide, highResMat)
-        val lowResMat = Mat()
-        Utils.bitmapToMat(lowResColor, lowResMat)
-
-        Imgproc.cvtColor(highResMat, highResMat, Imgproc.COLOR_RGBA2RGB)
-        Imgproc.cvtColor(lowResMat, lowResMat, Imgproc.COLOR_RGBA2RGB)
-
-        val upscaledLowResMat = Mat()
-        Imgproc.resize(lowResMat, upscaledLowResMat, highResMat.size(), 0.0, 0.0, Imgproc.INTER_CUBIC)
-
-        Imgproc.cvtColor(highResMat, highResMat, Imgproc.COLOR_RGB2Lab)
-        Imgproc.cvtColor(upscaledLowResMat, upscaledLowResMat, Imgproc.COLOR_RGB2Lab)
-
-        val highResChannels = ArrayList<Mat>()
-        Core.split(highResMat, highResChannels)
-        val lowResChannels = ArrayList<Mat>()
-        Core.split(upscaledLowResMat, lowResChannels)
-
-        val alpha = 0.5
-        val blendedL = Mat()
-        Core.addWeighted(highResChannels[0], alpha, lowResChannels[0], 1 - alpha, 0.0, blendedL)
-        val finalChannels = listOf(blendedL, lowResChannels[1], lowResChannels[2])
-
-        val finalLabMat = Mat()
-        Core.merge(finalChannels, finalLabMat)
-
-        val finalRgbMat = Mat()
-        Imgproc.cvtColor(finalLabMat, finalRgbMat, Imgproc.COLOR_Lab2RGB)
-
-        val finalBitmap = Bitmap.createBitmap(highResGuide.width, highResGuide.height, Bitmap.Config.ARGB_8888)
-        Utils.matToBitmap(finalRgbMat, finalBitmap)
-
-        // Giải phóng bộ nhớ cho các đối tượng Mat
-        highResMat.release()
-        lowResMat.release()
-        upscaledLowResMat.release()
-        highResChannels.forEach { it.release() }
-        lowResChannels.forEach { it.release() }
-        finalLabMat.release()
-        finalRgbMat.release()
-
-        return finalBitmap
-    }
-
-    private fun applyColorTransferLab(highResGuide: Bitmap, lowResColor: Bitmap): Bitmap {
-        val highResMat = Mat()
-        Utils.bitmapToMat(highResGuide, highResMat)
-        val lowResMat = Mat()
-        Utils.bitmapToMat(lowResColor, lowResMat)
-
-        Imgproc.cvtColor(highResMat, highResMat, Imgproc.COLOR_RGBA2RGB)
-        Imgproc.cvtColor(lowResMat, lowResMat, Imgproc.COLOR_RGBA2RGB)
-
-        val upscaledLowResMat = Mat()
-        Imgproc.resize(lowResMat, upscaledLowResMat, highResMat.size(), 0.0, 0.0, Imgproc.INTER_CUBIC)
-
-        Imgproc.cvtColor(highResMat, highResMat, Imgproc.COLOR_RGB2Lab)
-        Imgproc.cvtColor(upscaledLowResMat, upscaledLowResMat, Imgproc.COLOR_RGB2Lab)
-
-        val highResChannels = ArrayList<Mat>()
-        Core.split(highResMat, highResChannels)
-        val lowResChannels = ArrayList<Mat>()
-        Core.split(upscaledLowResMat, lowResChannels)
-
-        val finalChannels = listOf(
-            highResChannels[0], // Kênh L từ ảnh gốc (chi tiết)
-            lowResChannels[1],  // Kênh a* từ ảnh GAN (màu)
-            lowResChannels[2]   // Kênh b* từ ảnh GAN (màu)
-        )
-
-        val finalLabMat = Mat()
-        Core.merge(finalChannels, finalLabMat)
-
-        val finalRgbMat = Mat()
-        Imgproc.cvtColor(finalLabMat, finalRgbMat, Imgproc.COLOR_Lab2RGB)
-
-        val finalBitmap = Bitmap.createBitmap(highResGuide.width, highResGuide.height, Bitmap.Config.ARGB_8888)
-        Utils.matToBitmap(finalRgbMat, finalBitmap)
-
-        highResMat.release()
-        lowResMat.release()
-        upscaledLowResMat.release()
-        highResChannels.forEach { it.release() }
-        lowResChannels.forEach { it.release() }
-        finalLabMat.release()
-        finalRgbMat.release()
-
-        return finalBitmap
-    }
-
     fun destroy() {
         generatorRunner.destroy()
+        guideBitmap?.recycle()
+        guideBitmap = null
     }
 
     private fun getTimeLabel(hour: Int): String = when {

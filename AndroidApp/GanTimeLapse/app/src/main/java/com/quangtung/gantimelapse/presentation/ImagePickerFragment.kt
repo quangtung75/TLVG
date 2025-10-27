@@ -71,72 +71,19 @@ class ImagePickerFragment : Fragment() {
         binding.btnGenerate.setOnClickListener {
             val uri = croppedImageUri
             if (uri != null) {
-                showGenerateOptionsDialog(uri)
-            } else {
-                Toast.makeText(requireContext(), "Please upload an image first!", Toast.LENGTH_SHORT).show()
-            }
-        }
-    }
-
-    private fun showGenerateOptionsDialog(imageUri: Uri) {
-        val dialogView = LayoutInflater.from(requireContext()).inflate(R.layout.dialog_generate_options, null)
-
-        val sliderFrameCount = dialogView.findViewById<Slider>(R.id.sliderFrameCount)
-        val sliderStartTime = dialogView.findViewById<Slider>(R.id.sliderStartTime)
-        val sliderEndTime = dialogView.findViewById<Slider>(R.id.sliderEndTime)
-
-        val tvFrameCount = dialogView.findViewById<TextView>(R.id.tvFrameCount)
-        val tvStartTime = dialogView.findViewById<TextView>(R.id.tvStartTime)
-        val tvEndTime = dialogView.findViewById<TextView>(R.id.tvEndTime)
-
-        val updateTimeLabel: (TextView, Float) -> Unit = { textView, value ->
-            val hour = value.toInt()
-            val hourText = String.format(Locale.US, "%02d:00", hour)
-            val dayPart = when (hour) {
-                in 5..7 -> "Sunrise"
-                in 8..11 -> "Morning"
-                in 12..16 -> "Afternoon"
-                in 17..19 -> "Sunset"
-                else -> "Night"
-            }
-            textView.text = "$hourText ($dayPart)"
-        }
-
-        sliderFrameCount.addOnChangeListener { _, value, _ ->
-            tvFrameCount.text = "${value.toInt()} frames"
-        }
-        sliderStartTime.addOnChangeListener { _, value, _ ->
-            updateTimeLabel(tvStartTime, value)
-        }
-        sliderEndTime.addOnChangeListener { _, value, _ ->
-            updateTimeLabel(tvEndTime, value)
-        }
-
-        MaterialAlertDialogBuilder(requireContext())
-            .setTitle("Video Generation Options")
-            .setView(dialogView)
-            .setNegativeButton("Cancel", null)
-            .setPositiveButton("Start") { _, _ ->
-                // When user clicks "Start"
-                val frameCount = sliderFrameCount.value.toInt()
-                val startHour = sliderStartTime.value.toInt()
-                val endHour = sliderEndTime.value.toInt()
-
                 val bundle = Bundle().apply {
-                    putString("image_uri", imageUri.toString())
-                    putInt("frame_count", frameCount)
-                    putInt("start_hour", startHour)
-                    putInt("end_hour", endHour)
+                    putString("image_uri", uri.toString())
                 }
 
                 findNavController().navigate(
                     R.id.action_imagePickerFragment_to_processingFragment,
                     bundle
                 )
+            } else {
+                Toast.makeText(requireContext(), "Please upload an image first!", Toast.LENGTH_SHORT).show()
             }
-            .show()
+        }
     }
-
 
     private fun startCrop(uri: Uri) {
         val cropOptions = CropImageOptions(
