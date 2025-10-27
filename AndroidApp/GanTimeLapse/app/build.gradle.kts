@@ -61,8 +61,6 @@ dependencies {
     implementation(libs.androidx.exoplayer)
     implementation(libs.androidx.exoplayer.ui)
 
-    implementation(project(":opencv"))
-
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
     androidTestImplementation(libs.androidx.espresso.core)
