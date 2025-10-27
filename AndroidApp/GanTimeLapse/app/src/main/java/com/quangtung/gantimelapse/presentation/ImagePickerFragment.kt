@@ -8,21 +8,22 @@ import androidx.fragment.app.Fragment
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
-import android.widget.TextView
 import android.widget.Toast
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.core.os.bundleOf
+import androidx.fragment.app.DialogFragment
+import androidx.fragment.app.viewModels
+import androidx.lifecycle.lifecycleScope
 import androidx.navigation.fragment.findNavController
 import com.canhub.cropper.CropImageContract
 import com.canhub.cropper.CropImageContractOptions
 import com.canhub.cropper.CropImageOptions
 import com.canhub.cropper.CropImageView
-import com.google.android.material.dialog.MaterialAlertDialogBuilder
-import com.google.android.material.slider.Slider
 import com.quangtung.gantimelapse.R
 import com.quangtung.gantimelapse.databinding.FragmentImagePickerBinding
-import java.util.Locale
-
+import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 
 class ImagePickerFragment : Fragment() {
 
@@ -32,6 +33,8 @@ class ImagePickerFragment : Fragment() {
 
     private lateinit var cropImage: ActivityResultLauncher<CropImageContractOptions>
     private lateinit var pickImage: ActivityResultLauncher<String>
+
+    private val viewModel: ImagePickerViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -52,7 +55,7 @@ class ImagePickerFragment : Fragment() {
         }
     }
 
-    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View? {
+    override fun onCreateView(inflater: LayoutInflater, container: ViewGroup?, savedInstanceState: Bundle?): View {
         _binding = FragmentImagePickerBinding.inflate(inflater, container, false)
         return binding.root
     }
@@ -71,18 +74,45 @@ class ImagePickerFragment : Fragment() {
         binding.btnGenerate.setOnClickListener {
             val uri = croppedImageUri
             if (uri != null) {
-                val bundle = Bundle().apply {
-                    putString("image_uri", uri.toString())
-                }
-
-                findNavController().navigate(
-                    R.id.action_imagePickerFragment_to_processingFragment,
-                    bundle
-                )
+                viewModel.startGeneration(uri)
+                ProgressDialogFragment().show(childFragmentManager, ProgressDialogFragment.TAG)
             } else {
                 Toast.makeText(requireContext(), "Please upload an image first!", Toast.LENGTH_SHORT).show()
             }
         }
+
+        observeViewModel()
+    }
+
+    private fun observeViewModel() {
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.processingState.collectLatest { state ->
+                when (state) {
+                    is ProcessingState.Complete -> {
+                        dismissProgressDialog()
+                        val bundle = bundleOf("videoPath" to state.videoPath)
+                        findNavController().navigate(
+                            R.id.action_imagePickerFragment_to_resultFragment,
+                            bundle
+                        )
+                        viewModel.resetState()
+                    }
+                    is ProcessingState.Error -> {
+                        dismissProgressDialog()
+                        Toast.makeText(requireContext(), state.message, Toast.LENGTH_LONG).show()
+                        viewModel.resetState()
+                    }
+                    else -> {
+                        // Trạng thái Processing được xử lý bởi DialogFragment
+                        // Trạng thái Idle không làm gì cả
+                    }
+                }
+            }
+        }
+    }
+
+    private fun dismissProgressDialog() {
+        (childFragmentManager.findFragmentByTag(ProgressDialogFragment.TAG) as? DialogFragment)?.dismiss()
     }
 
     private fun startCrop(uri: Uri) {
@@ -103,5 +133,8 @@ class ImagePickerFragment : Fragment() {
         cropImage.launch(CropImageContractOptions(uri, cropOptions))
     }
 
-    fun getCroppedImageUri(): Uri? = croppedImageUri
+    override fun onDestroyView() {
+        super.onDestroyView()
+        _binding = null
+    }
 }

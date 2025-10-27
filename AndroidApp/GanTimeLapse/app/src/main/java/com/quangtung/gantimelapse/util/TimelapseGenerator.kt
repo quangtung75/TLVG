@@ -43,8 +43,8 @@ class TimelapseGenerator(
      */
     suspend fun generateLowResFrames(
         frameCount: Int,
-        startHour: Int,
-        endHour: Int
+        startHour: Float,
+        endHour: Float
     ): List<Bitmap> = withContext(Dispatchers.Default) {
         val localGuideBitmap = guideBitmap ?: return@withContext emptyList()
         val frames = mutableListOf<Bitmap>()
