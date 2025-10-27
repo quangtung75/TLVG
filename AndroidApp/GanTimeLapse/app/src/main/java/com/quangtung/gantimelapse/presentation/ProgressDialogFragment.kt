@@ -26,7 +26,14 @@ class ProgressDialogFragment : DialogFragment() {
         _binding = DialogProcessingBinding.inflate(inflater, container, false)
         dialog?.setCanceledOnTouchOutside(false)
         isCancelable = false
+        dialog?.window?.setBackgroundDrawableResource(android.R.color.transparent)
         return binding.root
+    }
+
+    override fun onStart() {
+        super.onStart()
+        val width = (resources.displayMetrics.widthPixels * 0.85).toInt()
+        dialog?.window?.setLayout(width, ViewGroup.LayoutParams.WRAP_CONTENT)
     }
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {

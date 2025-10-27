@@ -57,12 +57,12 @@ class ImagePickerViewModel(application: Application) : AndroidViewModel(applicat
                 }
                 if (guideLoaded == null) throw Exception("Failed to load guide image")
 
-                _processingState.value = ProcessingState.Processing("Generating $originalFrameCount low-res frames...", -1)
+                _processingState.value = ProcessingState.Processing("Generating low-res frames...", -1)
                 val lowResFrames = withContext(Dispatchers.Default) {
                     generator.generateLowResFrames(originalFrameCount, startHour, endHour)
                 }
 
-                _processingState.value = ProcessingState.Processing("Faking $fakeNightFrameCount dark frames...", -1)
+                _processingState.value = ProcessingState.Processing("Generating low-res frames...", -1)
                 val fakeNightFrames = withContext(Dispatchers.Default) {
                     val lastFrame = lowResFrames.last()
                     createFakeNightFrames(lastFrame, fakeNightFrameCount)
@@ -72,13 +72,13 @@ class ImagePickerViewModel(application: Application) : AndroidViewModel(applicat
 
                 val totalFrames = newOriginalCount + (newOriginalCount - 1) * framesToInsert
 
-                _processingState.value = ProcessingState.Processing("Interpolating $newOriginalCount frames...", -1)
+                _processingState.value = ProcessingState.Processing("Generating low-res frames...", -1)
                 val interpolatedLowRes = withContext(Dispatchers.Default) {
                     applyFakeInterpolation(allLowResFrames, framesToInsert)
                 }
 
-                _processingState.value = ProcessingState.Processing("Upsampling $totalFrames final frames...", 0)
-                val finalHighResFrames = mutableListOf<Bitmap>() // Đây là nửa "Day -> Night"
+                _processingState.value = ProcessingState.Processing("Upsampling frames...", 0)
+                val finalHighResFrames = mutableListOf<Bitmap>()
 
                 interpolatedLowRes.forEachIndexed { index, lowResBmp ->
                     val highResFrame = withContext(Dispatchers.Default) {
@@ -86,19 +86,19 @@ class ImagePickerViewModel(application: Application) : AndroidViewModel(applicat
                     }
                     finalHighResFrames.add(highResFrame.bitmap)
                     val progress = ((index + 1) * 100 / totalFrames)
-                    _processingState.value = ProcessingState.Processing("Upsampling frame ${index + 1}/$totalFrames...", progress)
+                    _processingState.value = ProcessingState.Processing("Upsampling frames...", progress)
                 }
                 interpolatedLowRes.forEach { if (!it.isRecycled) it.recycle() }
 
-                _processingState.value = ProcessingState.Processing("Creating reverse frames...", -1)
+                _processingState.value = ProcessingState.Processing("Finalizing sequence...", -1)
 
-                val dayToNightFrames = finalHighResFrames.toList() // Tạo 1 bản copy
+                val dayToNightFrames = finalHighResFrames.toList()
 
                 val nightToDayFrames = dayToNightFrames.reversed().drop(1)
 
-                val allVideoFrames = dayToNightFrames + nightToDayFrames // [A,B,C,D] + [C,B,A]
+                val allVideoFrames = dayToNightFrames + nightToDayFrames
 
-                _processingState.value = ProcessingState.Processing("Generated ${allVideoFrames.size} total frames. Creating video...", -1)
+                _processingState.value = ProcessingState.Processing("Creating video...", -1)
                 val videoPath = createVideoFromFrames(allVideoFrames)
 
                 _processingState.value = ProcessingState.Complete(videoPath)
@@ -133,8 +133,7 @@ class ImagePickerViewModel(application: Application) : AndroidViewModel(applicat
         val canvas = resultBitmap?.let { Canvas(it) }
         val paint = Paint()
         val matrix = ColorMatrix().apply {
-            // scale: giá trị < 1.0 sẽ làm ảnh tối đi
-            setScale(scale, scale, scale, 1.0f) // Scale R, G, B, giữ nguyên Alpha
+            setScale(scale, scale, scale, 1.0f)
         }
         paint.colorFilter = ColorMatrixColorFilter(matrix)
         if (canvas != null) {
