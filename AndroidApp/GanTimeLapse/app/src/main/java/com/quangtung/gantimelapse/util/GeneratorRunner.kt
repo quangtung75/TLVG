@@ -20,32 +20,28 @@ class GeneratorRunner(private val modelPath: String) {
         const val Z_DIM = 8
     }
 
-    fun generate(inputBitmap: Bitmap, tValue: Int): Bitmap? {
+    fun generate(inputBitmap: Bitmap, tValue: Int, zData: FloatArray): Bitmap? {
         // --- BƯỚC 1: CHUẨN BỊ CÁC INPUT TENSOR ---
 
         // 1.1. Chuẩn bị Tensor 'x' (ảnh đầu vào)
-        // Resize ảnh về đúng kích thước 128x128
         val resizedBitmap = Bitmap.createScaledBitmap(inputBitmap, IMG_SIZE, IMG_SIZE, true)
-
-        // Chuyển Bitmap sang Tensor và chuẩn hóa về khoảng [-1, 1]
-        // mean=0.5, std=0.5 sẽ thực hiện phép biến đổi: (pixel/255 - 0.5) / 0.5 = 2*(pixel/255) - 1
         val imageTensor = TensorImageUtils.bitmapToFloat32Tensor(
             resizedBitmap,
             floatArrayOf(0.5f, 0.5f, 0.5f), // mean
             floatArrayOf(0.5f, 0.5f, 0.5f)  // std
         )
 
-        // 1.2. Chuẩn bị Tensor 'z' (latent vector ngẫu nhiên)
-        val random = Random()
-        val zData = FloatArray(Z_DIM) { (random.nextGaussian()).toFloat() } // Tạo nhiễu từ phân phối chuẩn
+        // 1.2. Chuẩn bị Tensor 'z' (nhận từ bên ngoài)
+        // val random = Random() // <-- XÓA BỎ
+        // val zData = FloatArray(Z_DIM) { (random.nextGaussian()).toFloat() } // <-- XÓA BỎ
         val zTensor = Tensor.fromBlob(zData, longArrayOf(1, Z_DIM.toLong()))
 
+        // 1.3. Chuẩn bị Tensor 't'
         val tData = longArrayOf(tValue.toLong())
         val tTensor = Tensor.fromBlob(tData, longArrayOf(1, 1))
 
         // --- BƯỚC 2: GỌI MODEL VÀ CHẠY SUY LUẬN ---
 
-        // Khi model có nhiều input, chúng ta truyền vào một mảng các IValue
         val outputIValue = module.forward(
             IValue.from(imageTensor),
             IValue.from(zTensor),
