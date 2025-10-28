@@ -30,7 +30,7 @@ class ImagePickerViewModel(application: Application) : AndroidViewModel(applicat
     private lateinit var runner: GeneratorRunner
 
     private val startHour: Float = 12F
-    private val endHour: Float = 23.5F
+    private val endHour: Float = 23F
 
     init {
         viewModelScope.launch(Dispatchers.IO) {
@@ -49,7 +49,7 @@ class ImagePickerViewModel(application: Application) : AndroidViewModel(applicat
             try {
                 val originalFrameCount = 24
                 val framesToInsert = 3
-                val fakeNightFrameCount = 4
+                val fakeNightFrameCount = 6
 
                 _processingState.value = ProcessingState.Processing("Loading guide image...", 0)
                 val guideLoaded = withContext(Dispatchers.Default) {
@@ -62,7 +62,7 @@ class ImagePickerViewModel(application: Application) : AndroidViewModel(applicat
                     generator.generateLowResFrames(originalFrameCount, startHour, endHour)
                 }
 
-                _processingState.value = ProcessingState.Processing("Generating low-res frames...", -1)
+                _processingState.value = ProcessingState.Processing("Generating dark frames...", -1)
                 val fakeNightFrames = withContext(Dispatchers.Default) {
                     val lastFrame = lowResFrames.last()
                     createFakeNightFrames(lastFrame, fakeNightFrameCount)
@@ -72,7 +72,7 @@ class ImagePickerViewModel(application: Application) : AndroidViewModel(applicat
 
                 val totalFrames = newOriginalCount + (newOriginalCount - 1) * framesToInsert
 
-                _processingState.value = ProcessingState.Processing("Generating low-res frames...", -1)
+                _processingState.value = ProcessingState.Processing("Smoothing transitions...", -1)
                 val interpolatedLowRes = withContext(Dispatchers.Default) {
                     applyFakeInterpolation(allLowResFrames, framesToInsert)
                 }
@@ -90,16 +90,10 @@ class ImagePickerViewModel(application: Application) : AndroidViewModel(applicat
                 }
                 interpolatedLowRes.forEach { if (!it.isRecycled) it.recycle() }
 
-                _processingState.value = ProcessingState.Processing("Finalizing sequence...", -1)
-
-                val dayToNightFrames = finalHighResFrames.toList()
-
-                val nightToDayFrames = dayToNightFrames.reversed().drop(1)
-
-                val allVideoFrames = dayToNightFrames + nightToDayFrames
 
                 _processingState.value = ProcessingState.Processing("Creating video...", -1)
-                val videoPath = createVideoFromFrames(allVideoFrames)
+
+                val videoPath = createVideoFromFrames(finalHighResFrames)
 
                 _processingState.value = ProcessingState.Complete(videoPath)
 
