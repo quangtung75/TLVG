@@ -47,9 +47,9 @@ class ImagePickerViewModel(application: Application) : AndroidViewModel(applicat
     fun startGeneration(imageUri: Uri) {
         viewModelScope.launch(Dispatchers.Main) {
             try {
-                val originalFrameCount = 24
-                val framesToInsert = 3
-                val fakeNightFrameCount = 6
+                val originalFrameCount = 12
+                val framesToInsert = 8
+                val fakeNightFrameCount = 3
 
                 _processingState.value = ProcessingState.Processing("Loading guide image...", 0)
                 val guideLoaded = withContext(Dispatchers.Default) {
@@ -62,7 +62,7 @@ class ImagePickerViewModel(application: Application) : AndroidViewModel(applicat
                     generator.generateLowResFrames(originalFrameCount, startHour, endHour)
                 }
 
-                _processingState.value = ProcessingState.Processing("Generating dark frames...", -1)
+                _processingState.value = ProcessingState.Processing("Generating low-res frames...", -1)
                 val fakeNightFrames = withContext(Dispatchers.Default) {
                     val lastFrame = lowResFrames.last()
                     createFakeNightFrames(lastFrame, fakeNightFrameCount)
@@ -72,7 +72,7 @@ class ImagePickerViewModel(application: Application) : AndroidViewModel(applicat
 
                 val totalFrames = newOriginalCount + (newOriginalCount - 1) * framesToInsert
 
-                _processingState.value = ProcessingState.Processing("Smoothing transitions...", -1)
+                _processingState.value = ProcessingState.Processing("Generating low-res frames...", -1)
                 val interpolatedLowRes = withContext(Dispatchers.Default) {
                     applyFakeInterpolation(allLowResFrames, framesToInsert)
                 }
