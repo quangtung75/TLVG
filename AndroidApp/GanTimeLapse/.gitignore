@@ -16,3 +16,4 @@ local.properties
 /opencv/
 /app/src/main/assets/model_mobile.ptl
 /app/src/main/assets/model_traced.jit
+/app/release/
